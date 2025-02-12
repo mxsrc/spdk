@@ -1266,6 +1266,16 @@ if __name__ == "__main__":
     p.add_argument('name', help='pass through bdev name')
     p.set_defaults(func=bdev_passthru_delete)
 
+    def bdev_passthru_set_mode(args):
+        rpc.bdev.bdev_passthru_set_mode(args.client,
+                                        name=args.name,
+                                        mode=args.mode)
+
+    p = subparsers.add_parser('bdev_passthru_set_mode', help='Set pass through device mode')
+    p.add_argument('name', help='Pass through bdev name')
+    p.add_argument('mode', choices=['full', 'read-only', 'blocked'], help='Access mode')
+    p.set_defaults(func=bdev_passthru_set_mode)
+
     def bdev_get_bdevs(args):
         print_dict(rpc.bdev.bdev_get_bdevs(args.client,
                                            name=args.name, timeout=args.timeout_ms))

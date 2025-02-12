@@ -60,6 +60,7 @@ struct vbdev_passthru {
 	struct spdk_bdev		pt_bdev;    /* the PT virtual bdev */
 	TAILQ_ENTRY(vbdev_passthru)	link;
 	struct spdk_thread		*thread;    /* thread where base device is opened */
+	enum spdk_vbdev_passthru_mode	mode;       /* access mode */
 };
 static TAILQ_HEAD(, vbdev_passthru) g_pt_nodes = TAILQ_HEAD_INITIALIZER(g_pt_nodes);
 
@@ -277,6 +278,24 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 	struct spdk_bdev_ext_io_opts io_opts;
 	int rc = 0;
 
+	if ((pt_node->mode == SPDK_VBDEV_PASSTHRU_MODE_BLOCKED) &&
+			((bdev_io->type == SPDK_BDEV_IO_TYPE_READ) ||
+			 (bdev_io->type == SPDK_BDEV_IO_TYPE_WRITE) ||
+			 (bdev_io->type == SPDK_BDEV_IO_TYPE_WRITE_ZEROES))) {
+		SPDK_INFOLOG(vbdev_passthru, "passthru: blocked IO request to %s - device is blocked\n",
+			     pt_node->pt_bdev.name);
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+		return;
+	}
+	if ((pt_node->mode != SPDK_VBDEV_PASSTHRU_MODE_FULL) &&
+			((bdev_io->type == SPDK_BDEV_IO_TYPE_WRITE) ||
+			  (bdev_io->type == SPDK_BDEV_IO_TYPE_WRITE_ZEROES))) {
+		SPDK_INFOLOG(vbdev_passthru, "passthru: blocked write request to %s - device is read-only\n",
+			     pt_node->pt_bdev.name);
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+		return;
+	}
+
 	/* Setup a per IO context value; we don't do anything with it in the vbdev other
 	 * than confirm we get the same thing back in the completion callback just to
 	 * demonstrate.
@@ -339,6 +358,7 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 		return;
 	}
+
 	if (rc != 0) {
 		if (rc == -ENOMEM) {
 			SPDK_ERRLOG("No memory, start to queue io for passthru.\n");
@@ -621,6 +641,7 @@ vbdev_passthru_register(const char *bdev_name)
 			break;
 		}
 		pt_node->pt_bdev.product_name = "passthru";
+		pt_node->mode = SPDK_VBDEV_PASSTHRU_MODE_FULL;
 
 		/* The base bdev that we're attaching to. */
 		rc = spdk_bdev_open_ext(bdev_name, true, vbdev_passthru_base_bdev_event_cb,
@@ -766,6 +787,36 @@ bdev_passthru_delete_disk(const char *bdev_name, spdk_bdev_unregister_cb cb_fn, 
 	} else {
 		cb_fn(cb_arg, rc);
 	}
+}
+
+static struct vbdev_passthru*
+vbdev_passthru_find(const char* name)
+{
+	struct vbdev_passthru *pt_node = NULL;
+	struct vbdev_passthru *tmp = NULL;
+
+	TAILQ_FOREACH_SAFE(pt_node, &g_pt_nodes, link, tmp) {
+		if (strcmp(name, pt_node->pt_bdev.name) == 0) {
+			return pt_node;
+		}
+	}
+
+	return NULL;
+}
+
+int
+bdev_passthru_set_mode(const char *vbdev_name, enum spdk_vbdev_passthru_mode mode)
+{
+	struct vbdev_passthru* vbdev = vbdev_passthru_find(vbdev_name);
+	
+	if (!vbdev) {
+		SPDK_ERRLOG("passthru bdev %s does not exist\n", vbdev_name);
+		return -ENODEV;
+	}
+
+	vbdev->mode = mode;
+
+	return 0;
 }
 
 /* Because we specified this function in our pt bdev function table when we

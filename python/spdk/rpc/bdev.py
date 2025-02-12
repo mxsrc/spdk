@@ -1313,6 +1313,15 @@ def bdev_passthru_delete(client, name):
     return client.call('bdev_passthru_delete', params)
 
 
+def bdev_passthru_set_mode(client, name, mode):
+    """Set access mode on pass through device.
+    Args:
+        name: name of the pass through bdev
+        mode: the access mode. One of 'full', 'read-only', and 'blocked'
+    """
+    return client.call('bdev_passthru_set_mode', {'name': name, 'mode': mode})
+
+
 def bdev_opal_create(client, nvme_ctrlr_name, nsid, locking_range_id, range_start, range_length, password):
     """Create opal virtual block devices from a base nvme bdev.
     Args:

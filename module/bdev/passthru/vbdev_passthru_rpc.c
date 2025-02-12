@@ -113,3 +113,59 @@ cleanup:
 	free_rpc_bdev_passthru_delete(&req);
 }
 SPDK_RPC_REGISTER("bdev_passthru_delete", rpc_bdev_passthru_delete, SPDK_RPC_RUNTIME)
+
+struct rpc_bdev_passthru_set_mode {
+	char *name;
+	char *mode;
+};
+
+static void
+free_rpc_bdev_passthru_set_mode(struct rpc_bdev_passthru_set_mode *req)
+{
+	free(req->name);
+}
+
+static const struct spdk_json_object_decoder rpc_bdev_passthru_set_mode_decoders[] = {
+	{"name", offsetof(struct rpc_bdev_passthru_set_mode, name), spdk_json_decode_string},
+	{"mode", offsetof(struct rpc_bdev_passthru_set_mode, mode), spdk_json_decode_string},
+};
+
+static void
+rpc_bdev_passthru_set_mode(struct spdk_jsonrpc_request *request,
+			   const struct spdk_json_val *params)
+{
+	struct rpc_bdev_passthru_set_mode req = {NULL};
+
+	if (spdk_json_decode_object(params, rpc_bdev_passthru_set_mode_decoders,
+				    SPDK_COUNTOF(rpc_bdev_passthru_set_mode_decoders),
+				    &req)) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
+						 "spdk_json_decode_object failed");
+		goto cleanup;
+	}
+
+	enum spdk_vbdev_passthru_mode mode;
+
+	if (strcmp(req.mode, "full") == 0) {
+		mode = SPDK_VBDEV_PASSTHRU_MODE_FULL;
+	} else if (strcmp(req.mode, "read-only") == 0) {
+		mode = SPDK_VBDEV_PASSTHRU_MODE_READ_ONLY;
+	} else if (strcmp(req.mode, "blocked") == 0) {
+		mode = SPDK_VBDEV_PASSTHRU_MODE_BLOCKED;
+	} else {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
+						 "invalid mode");
+		goto cleanup;
+	}
+
+	int rc = bdev_passthru_set_mode(req.name, mode);
+	if (rc != 0) {
+		spdk_jsonrpc_send_error_response(request, rc, spdk_strerror(-rc));
+	} else {
+		spdk_jsonrpc_send_bool_response(request, true);
+	}
+
+cleanup:
+	free_rpc_bdev_passthru_set_mode(&req);
+}
+SPDK_RPC_REGISTER("bdev_passthru_set_mode", rpc_bdev_passthru_set_mode, SPDK_RPC_RUNTIME)
