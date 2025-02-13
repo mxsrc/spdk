@@ -47,4 +47,12 @@ enum spdk_vbdev_passthru_mode {
  */
 int bdev_passthru_set_mode(const char *vbdev_name, enum spdk_vbdev_passthru_mode mode);
 
+/**
+ * Retrieve statistics of a passthru bdev.
+ *
+ * \param vbdev_name Name of the pass through bdev.
+ * \param json_ctx JSON context to write the statistics to.
+ */
+int bdev_passthru_get_statistics(const char *vbdev_name, struct spdk_json_write_ctx* json_ctx);
+
 #endif /* SPDK_VBDEV_PASSTHRU_H */

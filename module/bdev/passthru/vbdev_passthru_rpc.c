@@ -169,3 +169,43 @@ cleanup:
 	free_rpc_bdev_passthru_set_mode(&req);
 }
 SPDK_RPC_REGISTER("bdev_passthru_set_mode", rpc_bdev_passthru_set_mode, SPDK_RPC_RUNTIME)
+
+struct rpc_bdev_passthru_get_statistics {
+	char* name;
+};
+
+static void
+free_rpc_bdev_passthru_get_statistics(struct rpc_bdev_passthru_get_statistics *req)
+{
+	free(req->name);
+}
+
+static const struct spdk_json_object_decoder rpc_bdev_passthru_get_statistics_decoders[] = {
+	{"name", offsetof(struct rpc_bdev_passthru_set_mode, name), spdk_json_decode_string},
+};
+
+static void
+rpc_bdev_passthru_get_statistics(struct spdk_jsonrpc_request *request,
+			   const struct spdk_json_val *params)
+{
+	struct spdk_json_write_ctx *json_ctx;
+
+	struct rpc_bdev_passthru_get_statistics req = {NULL};
+
+	if (spdk_json_decode_object(params, rpc_bdev_passthru_get_statistics_decoders,
+				    SPDK_COUNTOF(rpc_bdev_passthru_get_statistics_decoders),
+				    &req)) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
+						 "spdk_json_decode_object failed");
+		goto cleanup;
+	}
+
+	json_ctx = spdk_jsonrpc_begin_result(request);
+	bdev_passthru_get_statistics(req.name, json_ctx);
+	spdk_jsonrpc_end_result(request, json_ctx);
+
+cleanup:
+	free_rpc_bdev_passthru_get_statistics(&req);
+}
+
+SPDK_RPC_REGISTER("bdev_passthru_get_statistics", rpc_bdev_passthru_get_statistics, SPDK_RPC_RUNTIME)

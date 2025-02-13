@@ -61,6 +61,13 @@ struct vbdev_passthru {
 	TAILQ_ENTRY(vbdev_passthru)	link;
 	struct spdk_thread		*thread;    /* thread where base device is opened */
 	enum spdk_vbdev_passthru_mode	mode;       /* access mode */
+	struct {
+		uint32_t read_request_count;
+		uint32_t write_request_count;
+		uint32_t blocked_request_count;
+		uint64_t bytes_read;
+		uint64_t bytes_written;
+	} statistics; /* IO statistics of the bdev */
 };
 static TAILQ_HEAD(, vbdev_passthru) g_pt_nodes = TAILQ_HEAD_INITIALIZER(g_pt_nodes);
 
@@ -285,6 +292,8 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 		SPDK_INFOLOG(vbdev_passthru, "passthru: blocked IO request to %s - device is blocked\n",
 			     pt_node->pt_bdev.name);
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+
+		pt_node->statistics.blocked_request_count += 1;
 		return;
 	}
 	if ((pt_node->mode != SPDK_VBDEV_PASSTHRU_MODE_FULL) &&
@@ -306,6 +315,13 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 	case SPDK_BDEV_IO_TYPE_READ:
 		spdk_bdev_io_get_buf(bdev_io, pt_read_get_buf_cb,
 				     bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
+
+		if (rc == 0) {
+			pt_node->statistics.read_request_count += 1;
+			pt_node->statistics.bytes_read +=
+				bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen;
+		}
+
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE:
 		pt_init_ext_io_opts(bdev_io, &io_opts);
@@ -313,12 +329,26 @@ vbdev_passthru_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *b
 						 bdev_io->u.bdev.iovcnt, bdev_io->u.bdev.offset_blocks,
 						 bdev_io->u.bdev.num_blocks, _pt_complete_io,
 						 bdev_io, &io_opts);
+
+		if (rc == 0) {
+			pt_node->statistics.write_request_count += 1;
+			pt_node->statistics.bytes_written +=
+				bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen;
+		}
+
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
 		rc = spdk_bdev_write_zeroes_blocks(pt_node->base_desc, pt_ch->base_ch,
 						   bdev_io->u.bdev.offset_blocks,
 						   bdev_io->u.bdev.num_blocks,
 						   _pt_complete_io, bdev_io);
+
+		if (rc == 0) {
+			pt_node->statistics.write_request_count += 1;
+			pt_node->statistics.bytes_written +=
+				bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen;
+		}
+
 		break;
 	case SPDK_BDEV_IO_TYPE_UNMAP:
 		rc = spdk_bdev_unmap_blocks(pt_node->base_desc, pt_ch->base_ch,
@@ -643,6 +673,12 @@ vbdev_passthru_register(const char *bdev_name)
 		pt_node->pt_bdev.product_name = "passthru";
 		pt_node->mode = SPDK_VBDEV_PASSTHRU_MODE_FULL;
 
+		pt_node->statistics.read_request_count = 0;
+		pt_node->statistics.write_request_count = 0;
+		pt_node->statistics.blocked_request_count = 0;
+		pt_node->statistics.bytes_read = 0;
+		pt_node->statistics.bytes_written = 0;
+
 		/* The base bdev that we're attaching to. */
 		rc = spdk_bdev_open_ext(bdev_name, true, vbdev_passthru_base_bdev_event_cb,
 					NULL, &pt_node->base_desc);
@@ -815,6 +851,27 @@ bdev_passthru_set_mode(const char *vbdev_name, enum spdk_vbdev_passthru_mode mod
 	}
 
 	vbdev->mode = mode;
+
+	return 0;
+}
+
+int
+bdev_passthru_get_statistics(const char *vbdev_name, struct spdk_json_write_ctx* json_ctx)
+{
+	struct vbdev_passthru* vbdev = vbdev_passthru_find(vbdev_name);
+
+	if (!vbdev) {
+		SPDK_ERRLOG("passthru bdev %s does not exist\n", vbdev_name);
+		return -ENODEV;
+	}
+
+	spdk_json_write_object_begin(json_ctx);
+	spdk_json_write_named_uint32(json_ctx, "read_request_count", vbdev->statistics.read_request_count);
+	spdk_json_write_named_uint32(json_ctx, "write_request_count", vbdev->statistics.write_request_count);
+	spdk_json_write_named_uint32(json_ctx, "blocked_request_count", vbdev->statistics.blocked_request_count);
+	spdk_json_write_named_uint64(json_ctx, "bytes_read", vbdev->statistics.bytes_read);
+	spdk_json_write_named_uint64(json_ctx, "bytes_written", vbdev->statistics.bytes_written);
+	spdk_json_write_object_end(json_ctx);
 
 	return 0;
 }

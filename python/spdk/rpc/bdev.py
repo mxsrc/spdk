@@ -1322,6 +1322,14 @@ def bdev_passthru_set_mode(client, name, mode):
     return client.call('bdev_passthru_set_mode', {'name': name, 'mode': mode})
 
 
+def bdev_passthru_get_statistics(client, name):
+    """Retrieve usage statistics of pass through device.
+    Args:
+        name: name of the pass through bdev
+    """
+    return client.call('bdev_passthru_get_statistics', {'name': name})
+
+
 def bdev_opal_create(client, nvme_ctrlr_name, nsid, locking_range_id, range_start, range_length, password):
     """Create opal virtual block devices from a base nvme bdev.
     Args:

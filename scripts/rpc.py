@@ -1276,6 +1276,14 @@ if __name__ == "__main__":
     p.add_argument('mode', choices=['full', 'read-only', 'blocked'], help='Access mode')
     p.set_defaults(func=bdev_passthru_set_mode)
 
+    def bdev_passthru_get_statistics(args):
+        print_dict(rpc.bdev.bdev_passthru_get_statistics(args.client,
+                                                         name=args.name))
+
+    p = subparsers.add_parser('bdev_passthru_get_statistics', help='Get usage statistics of pass through device')
+    p.add_argument('name', help='Pass through bdev name')
+    p.set_defaults(func=bdev_passthru_get_statistics)
+
     def bdev_get_bdevs(args):
         print_dict(rpc.bdev.bdev_get_bdevs(args.client,
                                            name=args.name, timeout=args.timeout_ms))
